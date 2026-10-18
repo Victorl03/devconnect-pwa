@@ -50,8 +50,54 @@ self.addEventListener('activate', event => {
     event.waitUntil(self.clients.claim());
 });
 
-// FASE FETCH (Escuchando peticiones)
+
+ // FASE FETCH: Estrategia Cache First
 self.addEventListener('fetch', event => {
-    // Por ahora solo monitoreamos en consola
-    console.log('SW pidiendo:', event.request.url);
+    // Solo interceptamos peticiones GET
+    if (event.request.method !== 'GET') {
+        return;
+    }
+
+    // Solo atendemos recursos del mismo origen
+    const url = new URL(event.request.url);
+
+    if (url.origin !== self.location.origin) {
+        return;
+    }
+
+    event.respondWith(
+        caches.match(event.request).then(respuestaCache => {
+            // Si el archivo existe en caché, lo devolvemos
+            if (respuestaCache) {
+                console.log(
+                    'SW: Sirviendo desde Caché',
+                    event.request.url
+                );
+
+                return respuestaCache;
+            }
+
+            // Si no está en caché, intentamos obtenerlo de la red
+            console.log(
+                'SW: No está en caché, buscando en red:',
+                event.request.url
+            );
+
+            return fetch(event.request).then(respuestaRed => {
+                if (!respuestaRed.ok) {
+                    return respuestaRed;
+                }
+
+                // Guardamos una copia para futuras visitas
+                const copiaRespuesta = respuestaRed.clone();
+
+                caches.open(CACHE_NAME).then(cache => {
+                    cache.put(event.request, copiaRespuesta);
+                });
+
+                return respuestaRed;
+            });
+        })
+    );
 });
+
